@@ -1,0 +1,53 @@
+# Docker Compose配置
+# 用于本地开发和部署
+
+version: '3.8'
+
+services:
+  # PDF OCR处理服务
+  ocr-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # 数据卷
+      - ./data/input:/data/input
+      - ./data/output:/data/output
+      - ./data/reference:/data/reference
+      - ./data/temp:/data/temp
+      # 模型缓存
+      - huggingface_cache:/root/.cache/huggingface
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - HF_HOME=/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # Redis (用于任务队列，可选)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    profiles:
+      - full  # 只在完整模式下启动
+
+volumes:
+  huggingface_cache:
+  redis_data:

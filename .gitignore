@@ -1,0 +1,57 @@
+# Git忽略文件
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+*.manifest
+*.spec
+
+# 虚拟环境
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 临时文件
+*.log
+*.tmp
+*.temp
+temp/
+.cache/
+
+# OCR缓存
+ocr_cache/
+*.cache
+
+# 测试输出
+OCR_结果_*/
+分类结果/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 配置文件（包含敏感路径）
+# config.yaml  # 如需忽略请取消注释
+
+# 大型模型文件
+*.bin
+*.safetensors
+*.ckpt
+*.pth

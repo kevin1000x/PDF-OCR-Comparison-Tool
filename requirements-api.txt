@@ -1,0 +1,19 @@
+# API服务器额外依赖
+
+# Web框架
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# 文件上传
+python-multipart>=0.0.6
+
+# 后台任务
+celery>=5.3.0
+redis>=5.0.0
+
+# 监控
+prometheus-client>=0.19.0
+
+# 可选: 异步支持
+aiofiles>=23.0.0
+httpx>=0.25.0

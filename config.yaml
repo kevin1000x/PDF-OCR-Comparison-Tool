@@ -1,0 +1,191 @@
+# PDF智能OCR分类与比对系统 配置文件
+
+# 路径配置
+paths:
+  # 待处理的凭证PDF文件夹
+  input_vouchers: "C:/Users/Kevin/Desktop/excel/致同/凭证"
+  # 参照对比的扫描资料文件夹
+  reference_docs: "C:/Users/Kevin/Desktop/excel/致同/扫描资料/扫描资料"
+  # 分类结果输出目录
+  output_dir: "C:/Users/Kevin/Desktop/excel/致同/分类结果"
+  # 临时文件目录
+  temp_dir: "C:/Users/Kevin/Desktop/excel/致同/temp"
+
+# 项目映射配置
+projects:
+  SARS项目:
+    voucher_folders: ["SARS"]
+    reference_folders: []
+    keywords: ["SARS", "生物孵化器", "消防工程", "洁净车间", "生物工程孵化器"]
+    
+  二区规划:
+    voucher_folders: ["二区规划"]
+    reference_folders: ["二区规划"]
+    keywords: ["大学科技园", "详细蓝图", "城规院", "规划", "园区开发区"]
+    
+  留学生创业园:
+    voucher_folders: ["我的文档2026-01-23 16_26_12"]
+    reference_folders: []
+    keywords: ["留学生创业园", "综合布线", "房租", "创业园"]
+    
+  厂房再造:
+    voucher_folders: ["我的文档2026-01-26 14_52_59"]
+    reference_folders: ["厂房再造及科苑大道改造"]
+    keywords: ["厂房再造", "产业置换", "科苑路", "科苑大道"]
+    
+  高新区信息网:
+    voucher_folders: ["高新区信息网扩容工程"]
+    reference_folders: ["信息网扩容工程"]
+    keywords: ["信息网", "扩容", "宽带", "信息网络"]
+    
+  麻雀岭:
+    voucher_folders: ["麻雀岭"]
+    reference_folders: ["麻雀岭"]
+    keywords: ["麻雀岭"]
+
+  中区建设:
+    voucher_folders: []
+    reference_folders: ["中区建设"]
+    keywords: ["中区", "中小企业", "填海"]
+
+  形象工程:
+    voucher_folders: []
+    reference_folders: ["形象工程", "形象工程二期"]
+    keywords: ["形象工程"]
+
+  科技园供变电:
+    voucher_folders: []
+    reference_folders: ["科技园供变电"]
+    keywords: ["供变电", "变电"]
+
+  科苑路建设:
+    voucher_folders: []
+    reference_folders: ["科苑路建设"]
+    keywords: ["科苑路"]
+
+  集成电路:
+    voucher_folders: []
+    reference_folders: ["集成电路"]
+    keywords: ["集成电路"]
+
+  高新区一期:
+    voucher_folders: []
+    reference_folders: ["高新区一期"]
+    keywords: ["高新区一期"]
+
+  高新区二期:
+    voucher_folders: []
+    reference_folders: ["高新区二期"]
+    keywords: ["高新区二期"]
+
+  土地补偿:
+    voucher_folders: []
+    reference_folders: ["土地补偿"]
+    keywords: ["土地补偿", "征地"]
+
+  C1食堂装修:
+    voucher_folders: []
+    reference_folders: ["C1食堂装修"]
+    keywords: ["食堂", "C1"]
+
+# 文档类型识别配置
+document_types:
+  凭证:
+    keywords: ["记账凭证", "收款凭证", "付款凭证", "转账凭证", "借方", "贷方", "会计科目", "摘要"]
+    priority: 1
+  函:
+    keywords: ["函", "关于", "复函", "致函", "来函", "发文", "收文"]
+    priority: 2
+  合同书:
+    keywords: ["合同", "协议", "甲方", "乙方", "签章", "合同金额", "合同编号"]
+    priority: 3
+  会议纪要:
+    keywords: ["会议纪要", "参会人员", "会议时间", "会议地点", "议题", "决议"]
+    priority: 4
+  发票:
+    keywords: ["发票", "税号", "发票代码", "发票号码", "税额", "价税合计"]
+    priority: 5
+  审批单:
+    keywords: ["审批", "批复", "审批意见", "同意", "不同意", "签字", "审核"]
+    priority: 6
+  工程报告:
+    keywords: ["验收", "报告", "设计", "工程", "技术参数", "施工", "竣工"]
+    priority: 7
+  招标文件:
+    keywords: ["招标", "投标", "中标", "标书", "评标", "开标"]
+    priority: 8
+  资金申请:
+    keywords: ["资金申请", "用款申请", "拨款", "付款申请"]
+    priority: 9
+  其他:
+    keywords: []
+    priority: 99
+
+# OCR引擎配置
+ocr:
+  # engine选项: "paddleocr" 或 "deepseek-ocr2"
+  engine: "deepseek-ocr2"  # DeepSeek-OCR2更快更准确
+  language: "ch"
+  use_gpu: true  # GPU模式（PaddlePaddle GPU已安装）
+  # 图像预处理 (对扫描件关闭以提高速度)
+  preprocessing:
+    deskew: false  # 扫描件通常不需要
+    denoise: false  # 扫描件质量通常够好
+    enhance_contrast: false  # 关闭以提高速度
+  # 识别参数
+  det_db_thresh: 0.3
+  det_db_box_thresh: 0.5
+  rec_batch_num: 6
+
+# 文档分类模型配置
+classification:
+  # 使用本地Qwen2.5-VL模型
+  model: "Qwen/Qwen2.5-VL-7B-Instruct"
+  device: "cpu"
+  max_new_tokens: 256
+  # 是否使用大模型进行分类（false则使用关键词规则）
+  use_llm: false  # 改为false，使用关键词规则分类
+  # 分类置信度阈值
+  confidence_threshold: 0.7
+
+# 内容比对配置
+matching:
+  # 文本相似度算法
+  algorithm: "cosine"  # cosine, jaccard, levenshtein
+  # 相似度阈值
+  similarity_threshold: 0.75
+  # 完全匹配阈值
+  exact_match_threshold: 0.95
+  # 部分匹配阈值
+  partial_match_threshold: 0.60
+  # 提取的关键特征
+  features:
+    - title  # 标题
+    - date   # 日期
+    - amount # 金额
+    - number # 编号
+    - parties # 当事方
+
+# 处理参数
+processing:
+  # PDF转图像DPI (200保证精度)
+  dpi: 200
+  # 每批处理的页数
+  batch_size: 10
+  # 最大并行进程数
+  max_workers: 4
+  # 是否保存中间结果
+  save_intermediate: true
+  # 日志级别
+  log_level: "INFO"
+
+# 输出配置
+output:
+  # Excel报告格式
+  report_format: "xlsx"
+  # 是否生成详细日志
+  detailed_log: true
+  # 是否复制原文件到分类目录
+  copy_files: true
+  # 文件命名格式
+  naming_pattern: "{date}_{type}_{description}"

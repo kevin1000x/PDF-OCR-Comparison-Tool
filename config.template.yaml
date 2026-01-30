@@ -1,0 +1,106 @@
+# PDF智能OCR分类与比对系统 - 配置文件模板
+# 请复制此文件为 config.yaml 并根据需要修改
+
+# ===========================================
+# 路径配置（请修改为您的实际路径）
+# ===========================================
+paths:
+  # 待处理的凭证PDF文件夹
+  input_vouchers: "C:/您的路径/凭证"
+  # 参照对比的扫描资料文件夹
+  reference_docs: "C:/您的路径/扫描资料"
+  # 分类结果输出目录
+  output_dir: "C:/您的路径/分类结果"
+  # 临时文件目录
+  temp_dir: "C:/您的路径/temp"
+
+# ===========================================
+# 项目映射配置
+# ===========================================
+projects:
+  项目名称示例:
+    voucher_folders: ["凭证子文件夹名"]
+    reference_folders: ["参照子文件夹名"]
+    keywords: ["关键词1", "关键词2", "关键词3"]
+
+# ===========================================
+# 文档类型配置
+# ===========================================
+document_types:
+  凭证:
+    keywords: ["记账凭证", "凭证", "收据", "发票"]
+    priority: 1
+  合同书:
+    keywords: ["合同", "协议", "合约", "承包"]
+    priority: 2
+  函:
+    keywords: ["函", "通知", "告知", "回复"]
+    priority: 3
+  会议纪要:
+    keywords: ["会议纪要", "纪要", "会议记录"]
+    priority: 4
+  其他:
+    keywords: []
+    priority: 99
+
+# ===========================================
+# OCR引擎配置
+# ===========================================
+ocr:
+  # engine选项: "deepseek-ocr2" 或 "paddleocr"
+  engine: "deepseek-ocr2"
+  language: "ch"
+  use_gpu: true
+  # 图像预处理
+  preprocessing:
+    deskew: false
+    denoise: false
+    enhance_contrast: false
+
+# ===========================================
+# 文档分类模型配置
+# ===========================================
+classification:
+  # 是否使用大模型进行分类（false则使用关键词规则）
+  use_llm: false
+  # 分类置信度阈值
+  confidence_threshold: 0.7
+
+# ===========================================
+# 内容比对配置
+# ===========================================
+matching:
+  # 文本相似度算法: cosine, jaccard, levenshtein
+  algorithm: "cosine"
+  # 相似度阈值
+  similarity_threshold: 0.75
+  # 完全匹配阈值
+  exact_match_threshold: 0.95
+  # 部分匹配阈值
+  partial_match_threshold: 0.60
+
+# ===========================================
+# 处理参数
+# ===========================================
+processing:
+  # PDF转图像DPI（降低可提速，100-200）
+  dpi: 150
+  # 每批处理的页数
+  batch_size: 10
+  # 最大并行进程数
+  max_workers: 4
+  # 是否保存中间结果
+  save_intermediate: true
+  # 日志级别
+  log_level: "INFO"
+
+# ===========================================
+# 输出配置
+# ===========================================
+output:
+  # 报告格式
+  report_format: "xlsx"
+  # 是否生成详细日志
+  detailed_log: true
+  # 是否复制原文件到分类目录
+  copy_files: true
