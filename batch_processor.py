@@ -43,6 +43,116 @@ class BatchProgress:
     estimated_remaining: float
 
 
+class SmartScheduler:
+    """
+    智能调度器 - 根据GPU显存动态调整处理策略
+    
+    监控GPU资源使用情况，自动调整并发数和批处理大小
+    """
+    
+    def __init__(self, gpu_threshold: float = 0.8, min_batch: int = 1, max_batch: int = 5):
+        self.gpu_threshold = gpu_threshold  # GPU显存使用率阈值
+        self.min_batch = min_batch
+        self.max_batch = max_batch
+        self._last_check = 0
+        self._check_interval = 5  # 秒
+    
+    def get_gpu_memory_usage(self) -> float:
+        """获取GPU显存使用率"""
+        try:
+            import torch
+            if torch.cuda.is_available():
+                allocated = torch.cuda.memory_allocated()
+                total = torch.cuda.get_device_properties(0).total_memory
+                return allocated / total
+        except:
+            pass
+        
+        # 备选: 使用nvidia-smi
+        try:
+            import subprocess
+            result = subprocess.run(
+                ['nvidia-smi', '--query-gpu=memory.used,memory.total', '--format=csv,nounits,noheader'],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                used, total = map(int, result.stdout.strip().split(','))
+                return used / total
+        except:
+            pass
+        
+        return 0.5  # 默认返回中等使用率
+    
+    def get_optimal_batch_size(self) -> int:
+        """根据GPU显存动态调整批处理大小"""
+        mem_usage = self.get_gpu_memory_usage()
+        
+        if mem_usage > self.gpu_threshold:
+            logger.debug(f"GPU memory high ({mem_usage:.1%}), using min batch size")
+            return self.min_batch
+        elif mem_usage > 0.6:
+            return 2
+        else:
+            return self.max_batch
+    
+    def should_pause(self) -> bool:
+        """判断是否应该暂停等待GPU资源"""
+        return self.get_gpu_memory_usage() > 0.95
+
+
+class CheckpointManager:
+    """
+    断点续传管理器
+    
+    保存处理进度，支持中断后继续处理
+    """
+    
+    def __init__(self, checkpoint_dir: str = None):
+        self.checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else Path.cwd() / ".ocr_checkpoint"
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.checkpoint_file = self.checkpoint_dir / "progress.json"
+    
+    def save_progress(self, processed_files: List[str], stats: Dict = None):
+        """保存处理进度"""
+        import json
+        data = {
+            'processed_files': processed_files,
+            'stats': stats or {},
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+        }
+        with open(self.checkpoint_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        logger.debug(f"Checkpoint saved: {len(processed_files)} files processed")
+    
+    def load_progress(self) -> Tuple[List[str], Dict]:
+        """加载处理进度"""
+        import json
+        if self.checkpoint_file.exists():
+            try:
+                with open(self.checkpoint_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                processed = data.get('processed_files', [])
+                stats = data.get('stats', {})
+                logger.info(f"Checkpoint loaded: {len(processed)} files already processed")
+                return processed, stats
+            except Exception as e:
+                logger.warning(f"Failed to load checkpoint: {e}")
+        return [], {}
+    
+    def clear(self):
+        """清除检查点"""
+        if self.checkpoint_file.exists():
+            self.checkpoint_file.unlink()
+            logger.info("Checkpoint cleared")
+    
+    def get_remaining_files(self, all_files: List[Path], processed: List[str]) -> List[Path]:
+        """获取尚未处理的文件"""
+        processed_set = set(processed)
+        remaining = [f for f in all_files if str(f) not in processed_set]
+        logger.info(f"Remaining files: {len(remaining)}/{len(all_files)}")
+        return remaining
+
+
 class BatchProcessor:
     """
     批量处理器 - 支持多进程/多线程并行处理

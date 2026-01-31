@@ -465,7 +465,7 @@ class ReportGenerator:
         
     def generate_summary_report(self, results: List[ProcessingResult]) -> str:
         """
-        生成汇总报告
+        生成汇总报告（增强版）
         
         Args:
             results: 所有处理结果
@@ -475,34 +475,54 @@ class ReportGenerator:
         """
         try:
             import openpyxl
-            from openpyxl.styles import Font, PatternFill
+            from openpyxl.styles import Font, PatternFill, Alignment
+            from openpyxl.chart import BarChart, Reference, PieChart
         except ImportError:
             logger.error("openpyxl not installed")
             return ""
             
         wb = openpyxl.Workbook()
+        
+        # Sheet 1: 汇总报告
+        self._create_summary_sheet(wb, results)
+        
+        # Sheet 2: 处理统计
+        self._create_processing_stats_sheet(wb, results)
+        
+        # Sheet 3: 识别质量分析
+        self._create_quality_analysis_sheet(wb, results)
+        
+        # Sheet 4: 关键词统计
+        self._create_keyword_analysis_sheet(wb, results)
+        
+        # Sheet 5: 时间线视图
+        self._create_timeline_sheet(wb, results)
+        
+        # 保存
+        report_path = self.output_dir / "汇总报告.xlsx"
+        wb.save(str(report_path))
+        
+        logger.info(f"Enhanced summary report saved: {report_path}")
+        return str(report_path)
+    
+    def _create_summary_sheet(self, wb, results):
+        """创建汇总Sheet"""
+        from openpyxl.styles import Font, PatternFill
+        
         ws = wb.active
         ws.title = "汇总报告"
         
-        # 表头
         headers = ["项目名称", "文件数", "总页数", "完全匹配", "部分匹配", "未找到", "匹配率"]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col, value=header)
-            cell.font = Font(bold=True)
-            cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
             cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
             
         # 按项目统计
         projects = {}
         for result in results:
             if result.project not in projects:
-                projects[result.project] = {
-                    'files': 0,
-                    'pages': 0,
-                    'exact': 0,
-                    'partial': 0,
-                    'not_found': 0
-                }
+                projects[result.project] = {'files': 0, 'pages': 0, 'exact': 0, 'partial': 0, 'not_found': 0}
             projects[result.project]['files'] += 1
             projects[result.project]['pages'] += len(result.pages)
             for match in result.matches:
@@ -513,7 +533,6 @@ class ReportGenerator:
                 else:
                     projects[result.project]['not_found'] += 1
                     
-        # 写入数据
         row = 2
         for project, stats in sorted(projects.items()):
             total_matches = stats['exact'] + stats['partial'] + stats['not_found']
@@ -527,13 +546,165 @@ class ReportGenerator:
             ws.cell(row=row, column=6, value=stats['not_found'])
             ws.cell(row=row, column=7, value=f"{match_rate:.1%}")
             row += 1
-            
-        # 保存
-        report_path = self.output_dir / "汇总报告.xlsx"
-        wb.save(str(report_path))
+    
+    def _create_processing_stats_sheet(self, wb, results):
+        """创建处理统计Sheet"""
+        from openpyxl.styles import Font, PatternFill
         
-        logger.info(f"Summary report saved: {report_path}")
-        return str(report_path)
+        ws = wb.create_sheet("处理统计")
+        
+        headers = ["文件名", "项目", "页数", "处理时间(s)", "速度(s/页)", "OCR引擎", "状态"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        
+        row = 2
+        total_time = 0
+        total_pages = 0
+        
+        for result in results:
+            filename = Path(result.file_path).name
+            pages = len(result.pages)
+            proc_time = getattr(result, 'processing_time', 0)
+            speed = proc_time / pages if pages > 0 else 0
+            engine = getattr(result, 'engine_used', 'unknown')
+            status = "✅ 成功" if result.success else "❌ 失败"
+            
+            ws.cell(row=row, column=1, value=filename)
+            ws.cell(row=row, column=2, value=result.project)
+            ws.cell(row=row, column=3, value=pages)
+            ws.cell(row=row, column=4, value=f"{proc_time:.1f}")
+            ws.cell(row=row, column=5, value=f"{speed:.2f}")
+            ws.cell(row=row, column=6, value=engine)
+            ws.cell(row=row, column=7, value=status)
+            
+            total_time += proc_time
+            total_pages += pages
+            row += 1
+        
+        # 汇总行
+        ws.cell(row=row, column=1, value="合计")
+        ws.cell(row=row, column=1).font = Font(bold=True)
+        ws.cell(row=row, column=3, value=total_pages)
+        ws.cell(row=row, column=4, value=f"{total_time:.1f}")
+        avg_speed = total_time / total_pages if total_pages > 0 else 0
+        ws.cell(row=row, column=5, value=f"{avg_speed:.2f}")
+    
+    def _create_quality_analysis_sheet(self, wb, results):
+        """创建识别质量分析Sheet"""
+        from openpyxl.styles import Font, PatternFill
+        
+        ws = wb.create_sheet("识别质量")
+        
+        headers = ["文件名", "页码", "平均置信度", "最低置信度", "文本长度", "质量评级"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="70AD47", end_color="70AD47", fill_type="solid")
+        
+        row = 2
+        for result in results:
+            for page in result.pages:
+                page_num = page.get('page_num', 0)
+                avg_conf = page.get('avg_confidence', 1.0)
+                min_conf = page.get('min_confidence', 1.0)
+                text_len = len(page.get('text', ''))
+                
+                # 质量评级
+                if avg_conf >= 0.9:
+                    quality = "🟢 优"
+                elif avg_conf >= 0.8:
+                    quality = "🟡 良"
+                elif avg_conf >= 0.6:
+                    quality = "🟠 中"
+                else:
+                    quality = "🔴 差"
+                
+                ws.cell(row=row, column=1, value=Path(result.file_path).name)
+                ws.cell(row=row, column=2, value=page_num)
+                ws.cell(row=row, column=3, value=f"{avg_conf:.2f}")
+                ws.cell(row=row, column=4, value=f"{min_conf:.2f}")
+                ws.cell(row=row, column=5, value=text_len)
+                ws.cell(row=row, column=6, value=quality)
+                row += 1
+    
+    def _create_keyword_analysis_sheet(self, wb, results):
+        """创建关键词统计Sheet"""
+        from openpyxl.styles import Font, PatternFill
+        from collections import Counter
+        
+        ws = wb.create_sheet("关键词分析")
+        
+        headers = ["关键词", "出现次数", "出现文件数", "相关项目"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="ED7D31", end_color="ED7D31", fill_type="solid")
+        
+        # 统计关键词
+        keyword_counter = Counter()
+        keyword_files = {}
+        keyword_projects = {}
+        
+        for result in results:
+            for page in result.pages:
+                keywords = page.get('keywords', [])
+                for kw in keywords:
+                    keyword_counter[kw] += 1
+                    if kw not in keyword_files:
+                        keyword_files[kw] = set()
+                        keyword_projects[kw] = set()
+                    keyword_files[kw].add(Path(result.file_path).name)
+                    keyword_projects[kw].add(result.project)
+        
+        row = 2
+        for kw, count in keyword_counter.most_common(50):  # Top 50
+            ws.cell(row=row, column=1, value=kw)
+            ws.cell(row=row, column=2, value=count)
+            ws.cell(row=row, column=3, value=len(keyword_files.get(kw, set())))
+            ws.cell(row=row, column=4, value="、".join(keyword_projects.get(kw, set())))
+            row += 1
+    
+    def _create_timeline_sheet(self, wb, results):
+        """创建时间线视图Sheet"""
+        from openpyxl.styles import Font, PatternFill
+        from collections import defaultdict
+        
+        ws = wb.create_sheet("时间线")
+        
+        headers = ["日期", "文件数", "页数", "项目", "文件列表"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="7030A0", end_color="7030A0", fill_type="solid")
+        
+        # 按日期分组
+        date_groups = defaultdict(list)
+        
+        for result in results:
+            for page in result.pages:
+                dates = page.get('dates', [])
+                for date in dates:
+                    date_groups[date].append({
+                        'file': Path(result.file_path).name,
+                        'project': result.project,
+                        'pages': len(result.pages)
+                    })
+        
+        row = 2
+        for date in sorted(date_groups.keys()):
+            items = date_groups[date]
+            files = set(item['file'] for item in items)
+            projects = set(item['project'] for item in items)
+            total_pages = sum(item['pages'] for item in items)
+            
+            ws.cell(row=row, column=1, value=date)
+            ws.cell(row=row, column=2, value=len(files))
+            ws.cell(row=row, column=3, value=total_pages)
+            ws.cell(row=row, column=4, value="、".join(projects))
+            ws.cell(row=row, column=5, value="、".join(list(files)[:3]) + ("..." if len(files) > 3 else ""))
+            row += 1
 
 
 def load_config(config_path: str = None) -> dict:
