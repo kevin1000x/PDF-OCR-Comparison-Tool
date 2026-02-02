@@ -297,7 +297,7 @@ class ModernOCRApp:
         self.engine_var = ctk.StringVar(value="hybrid")
         self.engine_menu = ctk.CTkOptionMenu(
             self.sidebar,
-            values=["hybrid", "paddle", "deepseek"],
+            values=["hybrid", "rapid", "deepseek"],
             variable=self.engine_var,
             width=180,
             height=36,
@@ -603,20 +603,20 @@ class ModernOCRApp:
             anchor="w"
         ).pack(fill="x", padx=20, pady=(20, 15))
         
-        # Paddle进度
-        self.paddle_label = ctk.CTkLabel(
-            engine_card, text="PaddleOCR: 0次 (0%)",
+        # RapidOCR进度
+        self.rapid_label = ctk.CTkLabel(
+            engine_card, text="RapidOCR: 0次 (0%)",
             font=ctk.CTkFont(size=12),
             text_color=Theme.TEXT_MUTED, anchor="w"
         )
-        self.paddle_label.pack(fill="x", padx=20)
+        self.rapid_label.pack(fill="x", padx=20)
         
-        self.paddle_bar = ctk.CTkProgressBar(
+        self.rapid_bar = ctk.CTkProgressBar(
             engine_card, height=10, corner_radius=5,
             progress_color="#3B82F6", fg_color="#E5E7EB"
         )
-        self.paddle_bar.pack(fill="x", padx=20, pady=(5, 15))
-        self.paddle_bar.set(0)
+        self.rapid_bar.pack(fill="x", padx=20, pady=(5, 15))
+        self.rapid_bar.set(0)
         
         # DeepSeek进度
         self.deepseek_label = ctk.CTkLabel(
@@ -800,13 +800,62 @@ class ModernOCRApp:
             self._log("=" * 50)
             self._log(f"处理完成! 总耗时: {elapsed/60:.1f}分钟")
             
+            # 更新统计Tab
+            self._update_stats_tab(stats, elapsed)
+            
+            # 显示详细统计
+            total_files = stats.get('voucher_files', 0) + stats.get('reference_files', 0)
+            matched = stats.get('matched', 0)
+            partial = stats.get('partial', 0)
+            unmatched = stats.get('unmatched', 0)
+            
             messagebox.showinfo("完成", 
                 f"处理完成!\n\n"
                 f"耗时: {elapsed/60:.1f}分钟\n"
-                f"文件: {stats.get('total_files', 0)}"
+                f"凭证文件: {stats.get('voucher_files', 0)}\n"
+                f"参照文件: {stats.get('reference_files', 0)}\n\n"
+                f"匹配结果:\n"
+                f"  ✅ 匹配: {matched}\n"
+                f"  🔶 部分匹配: {partial}\n"
+                f"  ❌ 未匹配: {unmatched}"
             )
         else:
             self.current_file_label.configure(text="已停止")
+    
+    def _update_stats_tab(self, stats, elapsed):
+        """更新统计Tab的数据"""
+        if not USE_CUSTOM_TK:
+            return
+        
+        total_files = stats.get('voucher_files', 0) + stats.get('reference_files', 0)
+        total_pages = stats.get('voucher_pages', 0) + stats.get('reference_pages', 0)
+        matched = stats.get('matched', 0)
+        
+        # 更新统计卡片
+        if hasattr(self, 'stat_cards'):
+            if 'total_files' in self.stat_cards:
+                self.stat_cards['total_files'].configure(text=str(total_files))
+            if 'processed' in self.stat_cards:
+                self.stat_cards['processed'].configure(text=str(matched))
+            if 'pages' in self.stat_cards:
+                self.stat_cards['pages'].configure(text=str(total_pages))
+            if 'avg_time' in self.stat_cards:
+                avg = elapsed / total_files if total_files > 0 else 0
+                self.stat_cards['avg_time'].configure(text=f"{avg:.1f}s")
+        
+        # 更新引擎统计（如果有混合引擎统计数据）
+        rapid_calls = stats.get('rapid_calls', 0)
+        deepseek_calls = stats.get('deepseek_calls', 0)
+        total_ocr = rapid_calls + deepseek_calls
+        
+        if total_ocr > 0 and hasattr(self, 'rapid_label'):
+            rapid_pct = rapid_calls / total_ocr
+            self.rapid_label.configure(text=f"RapidOCR: {rapid_calls}次 ({rapid_pct:.0%})")
+            self.rapid_bar.set(rapid_pct)
+            
+            deepseek_pct = deepseek_calls / total_ocr
+            self.deepseek_label.configure(text=f"DeepSeek: {deepseek_calls}次 ({deepseek_pct:.0%})")
+            self.deepseek_bar.set(deepseek_pct)
     
     def _open_output_folder(self):
         folder = self.output_card.get_path()

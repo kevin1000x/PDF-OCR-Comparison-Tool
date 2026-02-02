@@ -161,6 +161,157 @@ class TextSimilarity:
         return 1 - (distance / max_len)
 
 
+class TFIDFMatcher:
+    """
+    基于TF-IDF的高效文本匹配器
+    
+    使用字符级n-gram进行向量化，对中文文本更友好
+    比纯cosine分词计算快10倍以上
+    """
+    
+    def __init__(self, ngram_range: tuple = (2, 4)):
+        """
+        初始化TF-IDF匹配器
+        
+        Args:
+            ngram_range: n-gram范围，默认(2,4)表示2-4个字符的组合
+        """
+        self.ngram_range = ngram_range
+        self.vectorizer = None
+        self.ref_vectors = None
+        self.ref_pages = []
+        self._is_fitted = False
+        
+    def fit(self, pages: List['PageFeatures']):
+        """
+        构建TF-IDF索引
+        
+        Args:
+            pages: 参照资料页面列表
+        """
+        if not pages:
+            logger.warning("No pages to fit TF-IDF")
+            return
+            
+        try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.metrics.pairwise import cosine_similarity
+            
+            self.ref_pages = pages
+            texts = [p.text for p in pages]
+            
+            # 根据文档数量调整max_df，避免少量文档时的问题
+            n_docs = len(texts)
+            max_df_value = 0.95 if n_docs > 10 else 1.0
+
+            # 使用字符级n-gram，对中文更友好
+            self.vectorizer = TfidfVectorizer(
+                analyzer='char',
+                ngram_range=self.ngram_range,
+                max_features=10000,  # 限制特征数量
+                min_df=1,
+                max_df=max_df_value
+            )
+            
+            self.ref_vectors = self.vectorizer.fit_transform(texts)
+            self._is_fitted = True
+            
+            logger.info(f"TF-IDF index built: {len(pages)} pages, {self.ref_vectors.shape[1]} features")
+            
+        except ImportError:
+            logger.warning("sklearn not installed, TF-IDF disabled")
+            self._is_fitted = False
+        except Exception as e:
+            logger.error(f"Failed to build TF-IDF index: {e}")
+            self._is_fitted = False
+    
+    def find_similar(self, query_text: str, top_k: int = 5, 
+                     min_similarity: float = 0.3) -> List[Tuple['PageFeatures', float]]:
+        """
+        查找与查询文本最相似的页面
+        
+        Args:
+            query_text: 查询文本
+            top_k: 返回前K个结果
+            min_similarity: 最低相似度阈值
+            
+        Returns:
+            [(PageFeatures, similarity), ...] 按相似度降序排列
+        """
+        if not self._is_fitted or not query_text.strip():
+            return []
+            
+        try:
+            from sklearn.metrics.pairwise import cosine_similarity
+            
+            query_vec = self.vectorizer.transform([query_text])
+            similarities = cosine_similarity(query_vec, self.ref_vectors)[0]
+            
+            # 获取top_k个最高相似度的索引
+            if len(similarities) <= top_k:
+                top_indices = list(range(len(similarities)))
+            else:
+                top_indices = similarities.argsort()[-top_k:][::-1]
+            
+            results = []
+            for idx in top_indices:
+                sim = similarities[idx]
+                if sim >= min_similarity:
+                    results.append((self.ref_pages[idx], float(sim)))
+            
+            # 按相似度降序排列
+            results.sort(key=lambda x: -x[1])
+            return results
+            
+        except Exception as e:
+            logger.error(f"TF-IDF search failed: {e}")
+            return []
+    
+    def find_similar_batch(self, query_texts: List[str], top_k: int = 5,
+                           min_similarity: float = 0.3) -> List[List[Tuple['PageFeatures', float]]]:
+        """
+        批量查找相似页面
+        
+        Args:
+            query_texts: 查询文本列表
+            top_k: 每个查询返回前K个结果
+            min_similarity: 最低相似度阈值
+            
+        Returns:
+            [[(PageFeatures, similarity), ...], ...]
+        """
+        if not self._is_fitted:
+            return [[] for _ in query_texts]
+            
+        try:
+            from sklearn.metrics.pairwise import cosine_similarity
+            
+            query_vecs = self.vectorizer.transform(query_texts)
+            all_similarities = cosine_similarity(query_vecs, self.ref_vectors)
+            
+            all_results = []
+            for similarities in all_similarities:
+                if len(similarities) <= top_k:
+                    top_indices = list(range(len(similarities)))
+                else:
+                    top_indices = similarities.argsort()[-top_k:][::-1]
+                
+                results = []
+                for idx in top_indices:
+                    sim = similarities[idx]
+                    if sim >= min_similarity:
+                        results.append((self.ref_pages[idx], float(sim)))
+                
+                results.sort(key=lambda x: -x[1])
+                all_results.append(results)
+            
+            return all_results
+            
+        except Exception as e:
+            logger.error(f"TF-IDF batch search failed: {e}")
+            return [[] for _ in query_texts]
+
+
 class PageFeatureIndex:
     """页面特征索引（用于快速检索）"""
     
@@ -214,7 +365,7 @@ class PageFeatureIndex:
 
 
 class ContentMatcher:
-    """内容比对器"""
+    """内容比对器 - 支持页面匹配和凭证组匹配"""
     
     def __init__(self, config: dict):
         """
@@ -223,8 +374,8 @@ class ContentMatcher:
         Args:
             config: matching配置字典
         """
-        self.config = config.get('matching', {})
-        self.algorithm = self.config.get('algorithm', 'cosine')
+        self.config = config.get('matching', config)  # 兼容两种传参方式
+        self.algorithm = self.config.get('algorithm', 'tfidf')  # 默认使用TF-IDF
         self.exact_threshold = self.config.get('exact_match_threshold', 0.95)
         self.partial_threshold = self.config.get('partial_match_threshold', 0.60)
         self.similarity_threshold = self.config.get('similarity_threshold', 0.75)
@@ -232,8 +383,15 @@ class ContentMatcher:
         # 初始化相似度计算器
         self.similarity_calculator = TextSimilarity()
         
-        # 参照资料索引
+        # TF-IDF匹配器（高效全文匹配）
+        self.tfidf_matcher = TFIDFMatcher()
+        self.use_tfidf = self.config.get('use_tfidf', True)
+        
+        # 参照资料索引（用于哈希快速匹配）
         self.reference_index = PageFeatureIndex()
+        
+        # 参照页面列表
+        self.reference_pages: List[PageFeatures] = []
         
     def build_reference_index(self, pages: List[PageFeatures]):
         """
@@ -243,9 +401,17 @@ class ContentMatcher:
             pages: 参照资料的页面特征列表
         """
         logger.info(f"Building reference index with {len(pages)} pages")
+        
+        self.reference_pages = pages
         self.reference_index = PageFeatureIndex()
         for page in pages:
             self.reference_index.add_page(page)
+        
+        # 同时构建TF-IDF索引
+        if self.use_tfidf and pages:
+            logger.info("Building TF-IDF index...")
+            self.tfidf_matcher.fit(pages)
+        
         logger.info("Reference index built successfully")
         
     def calculate_similarity(self, text1: str, text2: str) -> float:
@@ -270,7 +436,7 @@ class ContentMatcher:
             
     def find_matches(self, source_page: PageFeatures) -> List[Tuple[PageFeatures, float]]:
         """
-        为源页面查找匹配的参照页面
+        为源页面查找匹配的参照页面（使用全文相似度）
         
         Args:
             source_page: 源页面特征
@@ -287,27 +453,18 @@ class ContentMatcher:
             
         if matches:
             return matches  # 有精确匹配，直接返回
-            
-        # 2. 根据日期和金额快速筛选候选
-        candidates = set()
         
-        for date in source_page.dates:
-            for ref_page in self.reference_index.find_by_date(date):
-                candidates.add(id(ref_page))
-                
-        for amount in source_page.amounts:
-            for ref_page in self.reference_index.find_by_amount(amount):
-                candidates.add(id(ref_page))
-                
-        # 3. 如果没有候选，检查所有页面（限制数量）
-        if not candidates:
-            all_pages = self.reference_index.get_all_pages()
-            # 限制比对数量以提高性能
-            candidates = {id(p) for p in all_pages[:100]}
-            
-        # 4. 计算与候选页面的相似度
-        for ref_page in self.reference_index.get_all_pages():
-            if id(ref_page) in candidates:
+        # 2. 使用TF-IDF全文匹配（替代关键词筛选）
+        if self.use_tfidf and self.tfidf_matcher._is_fitted:
+            tfidf_matches = self.tfidf_matcher.find_similar(
+                source_page.text, 
+                top_k=10,
+                min_similarity=self.partial_threshold
+            )
+            matches.extend(tfidf_matches)
+        else:
+            # 回退到传统方法：对所有页面计算相似度
+            for ref_page in self.reference_pages:
                 similarity = self.calculate_similarity(source_page.text, ref_page.text)
                 if similarity >= self.partial_threshold:
                     matches.append((ref_page, similarity))
@@ -316,6 +473,31 @@ class ContentMatcher:
         matches.sort(key=lambda x: -x[1])
         
         return matches[:5]  # 返回前5个最佳匹配
+    
+    def find_matches_fulltext(self, text: str) -> List[Tuple[PageFeatures, float]]:
+        """
+        根据文本查找匹配的参照页面（用于凭证组合并文本匹配）
+        
+        Args:
+            text: 要匹配的文本
+            
+        Returns:
+            匹配的页面和相似度列表
+        """
+        if self.use_tfidf and self.tfidf_matcher._is_fitted:
+            return self.tfidf_matcher.find_similar(
+                text, 
+                top_k=10,
+                min_similarity=self.partial_threshold
+            )
+        else:
+            matches = []
+            for ref_page in self.reference_pages:
+                similarity = self.calculate_similarity(text, ref_page.text)
+                if similarity >= self.partial_threshold:
+                    matches.append((ref_page, similarity))
+            matches.sort(key=lambda x: -x[1])
+            return matches[:10]
         
     def match_page(self, source_page: PageFeatures) -> MatchResult:
         """
@@ -403,6 +585,138 @@ class ContentMatcher:
             'partial_matches': partial_matches,
             'not_found': not_found,
             'match_rate': (exact_matches + partial_matches) / total if total > 0 else 0
+        }
+
+
+@dataclass
+class VoucherGroupMatchResult:
+    """凭证组匹配结果"""
+    source_file: str           # 源文件路径
+    voucher_page: int          # 凭证首页页码
+    attachment_pages: str      # 附件页码范围（如 "P2-P5"）
+    attachment_count: int      # 附件数量
+    total_pages: int           # 凭证组总页数
+    match_status: str          # 匹配状态: "完全匹配", "部分匹配", "未找到"
+    target_file: str           # 匹配的目标文件
+    target_pages: str          # 目标文件页码范围
+    similarity: float          # 相似度
+    match_details: str = ""    # 匹配详情（哪些页面匹配到了）
+
+
+class VoucherGroupMatcher:
+    """凭证组匹配器 - 以凭证组为单位进行匹配"""
+    
+    def __init__(self, content_matcher: ContentMatcher):
+        self.content_matcher = content_matcher
+        
+    def match_group(self, voucher_group: 'VoucherGroup') -> VoucherGroupMatchResult:
+        """
+        匹配单个凭证组
+        
+        策略：使用凭证组的合并文本进行匹配，找到最相似的参照页面
+        
+        Args:
+            voucher_group: 凭证组对象
+            
+        Returns:
+            VoucherGroupMatchResult
+        """
+        from pathlib import Path
+        
+        # 使用合并文本进行匹配
+        combined_text = voucher_group.combined_text
+        matches = self.content_matcher.find_matches_fulltext(combined_text)
+        
+        source_file = Path(voucher_group.file_path).name
+        voucher_page = voucher_group.voucher_page_num
+        attachment_range = voucher_group.attachment_range
+        attachment_count = len(voucher_group.attachment_pages)
+        total_pages = voucher_group.total_pages
+        
+        if not matches:
+            return VoucherGroupMatchResult(
+                source_file=source_file,
+                voucher_page=voucher_page,
+                attachment_pages=attachment_range,
+                attachment_count=attachment_count,
+                total_pages=total_pages,
+                match_status="未找到",
+                target_file="-",
+                target_pages="-",
+                similarity=0.0
+            )
+        
+        # 获取最佳匹配
+        best_match, best_similarity = matches[0]
+        
+        # 判断匹配状态
+        if best_similarity >= self.content_matcher.exact_threshold:
+            status = "完全匹配"
+        elif best_similarity >= self.content_matcher.similarity_threshold:
+            status = "部分匹配"
+        else:
+            status = "低相似度"
+        
+        # 生成匹配详情
+        match_details = []
+        for match_page, sim in matches[:3]:  # 显示前3个匹配
+            match_details.append(f"{Path(match_page.file_path).name}:P{match_page.page_num}({sim:.0%})")
+        
+        return VoucherGroupMatchResult(
+            source_file=source_file,
+            voucher_page=voucher_page,
+            attachment_pages=attachment_range,
+            attachment_count=attachment_count,
+            total_pages=total_pages,
+            match_status=status,
+            target_file=Path(best_match.file_path).name,
+            target_pages=f"P{best_match.page_num}",
+            similarity=best_similarity,
+            match_details=", ".join(match_details)
+        )
+    
+    def match_groups(self, voucher_groups: List['VoucherGroup']) -> List[VoucherGroupMatchResult]:
+        """
+        批量匹配凭证组
+        
+        Args:
+            voucher_groups: 凭证组列表
+            
+        Returns:
+            VoucherGroupMatchResult列表
+        """
+        results = []
+        for group in voucher_groups:
+            result = self.match_group(group)
+            results.append(result)
+            logger.debug(f"Matched voucher P{group.voucher_page_num}: {result.match_status} ({result.similarity:.2f})")
+        return results
+    
+    def generate_summary(self, results: List[VoucherGroupMatchResult]) -> dict:
+        """
+        生成匹配汇总
+        
+        Args:
+            results: 匹配结果列表
+            
+        Returns:
+            汇总统计字典
+        """
+        total = len(results)
+        matched = sum(1 for r in results if r.match_status == "完全匹配")
+        partial = sum(1 for r in results if r.match_status == "部分匹配")
+        not_found = sum(1 for r in results if r.match_status == "未找到")
+        total_pages = sum(r.total_pages for r in results)
+        total_attachments = sum(r.attachment_count for r in results)
+        
+        return {
+            'voucher_count': total,
+            'matched': matched,
+            'partial': partial,
+            'not_found': not_found,
+            'match_rate': matched / total if total > 0 else 0,
+            'total_pages': total_pages,
+            'total_attachments': total_attachments
         }
 
 

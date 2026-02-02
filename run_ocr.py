@@ -392,7 +392,10 @@ def run_ocr_pipeline_with_callback(
     voucher_folder: str,
     reference_folder: str, 
     output_folder: str,
-    callback=None
+    callback=None,
+    engine: str = 'hybrid',
+    dpi: int = 150,
+    confidence_threshold: float = 0.85
 ) -> Dict:
     """
     带回调的OCR处理流程（用于GUI）
@@ -402,12 +405,14 @@ def run_ocr_pipeline_with_callback(
         reference_folder: 参照资料文件夹路径
         output_folder: 输出文件夹路径
         callback: 进度回调函数 callback(msg_type, **kwargs)
+        engine: OCR引擎 ('hybrid', 'paddle', 'deepseek')
+        dpi: PDF转图像DPI
+        confidence_threshold: 混合引擎置信度阈值
         
     Returns:
         处理结果统计
     """
     from pdf_processor import PDFProcessor
-    from deepseek_ocr2_engine import DeepSeekOCR2Engine
     from content_matcher import ContentMatcher, PageFeatures
     from ocr_engine import OCRResultExtractor
     
@@ -426,10 +431,27 @@ def run_ocr_pipeline_with_callback(
     
     # 初始化组件
     notify('status', text='初始化OCR引擎...')
-    notify('log', text='初始化OCR引擎...')
+    notify('log', text=f'初始化OCR引擎: {engine} (DPI={dpi})')
     
-    pdf_processor = PDFProcessor({'dpi': 150})
-    ocr_engine = DeepSeekOCR2Engine({})
+    pdf_processor = PDFProcessor({'dpi': dpi})
+    
+    # 根据engine参数选择OCR引擎
+    if engine == 'hybrid':
+        from hybrid_ocr_engine import get_hybrid_engine
+        ocr_engine = get_hybrid_engine(
+            mode='smart',
+            confidence_threshold=confidence_threshold
+        )
+        notify('log', text=f'混合引擎: RapidOCR+DeepSeek (阈值={confidence_threshold})')
+    elif engine == 'rapid':
+        from hybrid_ocr_engine import get_hybrid_engine
+        ocr_engine = get_hybrid_engine(mode='rapid_only')
+        notify('log', text='使用RapidOCR引擎 (ONNX加速)')
+    else:  # deepseek
+        from deepseek_ocr2_engine import DeepSeekOCR2Engine
+        ocr_engine = DeepSeekOCR2Engine({})
+        notify('log', text='使用DeepSeek-OCR2引擎')
+    
     feature_extractor = OCRResultExtractor()
     matcher = ContentMatcher({
         'similarity_threshold': 0.75,
@@ -529,36 +551,45 @@ def run_ocr_pipeline_with_callback(
         voucher_pdfs, voucher_output, all_voucher_pages, "凭证"
     )
     
-    # 生成对比报告
-    notify('status', text='生成对比报告...')
-    notify('log', text='生成对比报告...')
-    match_results = []
+    # === 凭证分组 ===
+    notify('status', text='凭证分组...')
+    notify('log', text='对凭证进行分组（识别凭证和附件）...')
     
-    for page in all_voucher_pages:
-        matches = matcher.find_matches(page)
-        if matches:
-            best_match = matches[0]
-            match_results.append({
-                '凭证文件': Path(page.file_path).name,
-                '凭证页码': page.page_num,
-                '匹配状态': '匹配' if best_match[1] > 0.75 else '部分匹配',
-                '参照文件': Path(best_match[0].file_path).name,
-                '参照页码': best_match[0].page_num,
-                '相似度': f"{best_match[1]:.2%}",
-                '凭证关键词': ', '.join(page.keywords[:5]),
-                '参照关键词': ', '.join(best_match[0].keywords[:5])
-            })
-        else:
-            match_results.append({
-                '凭证文件': Path(page.file_path).name,
-                '凭证页码': page.page_num,
-                '匹配状态': '未匹配',
-                '参照文件': '-',
-                '参照页码': '-',
-                '相似度': '-',
-                '凭证关键词': ', '.join(page.keywords[:5]),
-                '参照关键词': '-'
-            })
+    from voucher_grouper import VoucherGrouper
+    from content_matcher import VoucherGroupMatcher
+    
+    grouper = VoucherGrouper()
+    voucher_groups = grouper.group_pages(all_voucher_pages)
+    group_summary = grouper.get_summary(voucher_groups)
+    
+    notify('log', text=f"识别到 {group_summary['voucher_count']} 个凭证组，共 {group_summary['total_pages']} 页，附件 {group_summary['total_attachments']} 页")
+    
+    # === 凭证组匹配 ===
+    notify('status', text='匹配凭证组...')
+    notify('log', text='使用全文相似度匹配凭证组...')
+    
+    group_matcher = VoucherGroupMatcher(matcher)
+    group_results = group_matcher.match_groups(voucher_groups)
+    
+    # 生成匹配报告
+    match_results = []
+    for result in group_results:
+        match_results.append({
+            '凭证文件': result.source_file,
+            '凭证页码': f'P{result.voucher_page}',
+            '附件页码': result.attachment_pages,
+            '附件数量': result.attachment_count,
+            '总页数': result.total_pages,
+            '匹配状态': result.match_status,
+            '参照文件': result.target_file,
+            '参照页码': result.target_pages,
+            '相似度': f"{result.similarity:.2%}" if result.similarity > 0 else '-',
+            '匹配详情': result.match_details
+        })
+    
+    # 统计匹配结果
+    match_summary = group_matcher.generate_summary(group_results)
+    notify('log', text=f"匹配完成: 完全匹配 {match_summary['matched']}, 部分匹配 {match_summary['partial']}, 未匹配 {match_summary['not_found']}")
     
     # 保存Excel报告
     try:
@@ -576,6 +607,73 @@ def run_ocr_pipeline_with_callback(
                 writer.writerows(match_results)
         notify('log', text=f'对比报告已保存: {csv_path}')
     
+    # 获取引擎统计（如果是混合引擎）
+    engine_stats = {}
+    if hasattr(ocr_engine, 'get_stats'):
+        engine_stats = ocr_engine.get_stats()
+        notify('log', text=f"引擎统计: RapidOCR {engine_stats.get('rapid_calls', 0)}次, DeepSeek {engine_stats.get('deepseek_calls', 0)}次")
+    
+    # 生成增强汇总报告
+    try:
+        import pandas as pd
+        from datetime import datetime
+        
+        summary_path = output_path / "汇总报告.xlsx"
+        
+        with pd.ExcelWriter(str(summary_path), engine='openpyxl') as writer:
+            # Sheet 1: 对比结果
+            df_match = pd.DataFrame(match_results)
+            df_match.to_excel(writer, sheet_name='对比结果', index=False)
+            
+            # Sheet 2: 统计汇总
+            matched_count = sum(1 for r in match_results if r['匹配状态'] == '完全匹配')
+            partial_count = sum(1 for r in match_results if r['匹配状态'] in ('部分匹配', '低相似度'))
+            unmatched_count = sum(1 for r in match_results if r['匹配状态'] == '未找到')
+            match_rate = matched_count / len(match_results) * 100 if match_results else 0
+
+            stats_data = {
+                '指标': ['凭证文件数', '凭证页数', '参照文件数', '参照页数', 
+                        '完全匹配', '部分匹配', '未匹配', '匹配率'],
+                '数值': [
+                    len(voucher_pdfs), voucher_pages,
+                    len(reference_pdfs), ref_pages,
+                    matched_count,
+                    partial_count,
+                    unmatched_count,
+                    f"{match_rate:.1f}%"
+                ]
+            }
+            df_stats = pd.DataFrame(stats_data)
+            df_stats.to_excel(writer, sheet_name='统计汇总', index=False)
+            
+            # Sheet 3: 引擎统计
+            if engine_stats:
+                engine_data = {
+                    '引擎': ['RapidOCR', 'DeepSeek', 'Fallback次数'],
+                    '调用次数': [
+                        engine_stats.get('rapid_calls', 0),
+                        engine_stats.get('deepseek_calls', 0),
+                        engine_stats.get('fallback_count', 0)
+                    ]
+                }
+                df_engine = pd.DataFrame(engine_data)
+                df_engine.to_excel(writer, sheet_name='引擎统计', index=False)
+            
+            # Sheet 4: 处理信息
+            info_data = {
+                '项目': ['处理时间', '凭证文件夹', '参照文件夹', '输出文件夹'],
+                '值': [
+                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    voucher_folder, reference_folder, str(output_path)
+                ]
+            }
+            df_info = pd.DataFrame(info_data)
+            df_info.to_excel(writer, sheet_name='处理信息', index=False)
+        
+        notify('log', text=f'增强汇总报告已生成: {summary_path}')
+    except Exception as e:
+        notify('log', text=f'增强报告生成失败: {e}')
+    
     # 返回统计
     stats = {
         'status': 'success',
@@ -583,11 +681,16 @@ def run_ocr_pipeline_with_callback(
         'voucher_pages': voucher_pages,
         'reference_files': len(reference_pdfs),
         'reference_pages': ref_pages,
-        'matched': sum(1 for r in match_results if r['匹配状态'] == '匹配'),
-        'partial': sum(1 for r in match_results if r['匹配状态'] == '部分匹配'),
-        'unmatched': sum(1 for r in match_results if r['匹配状态'] == '未匹配'),
+        # 注意：VoucherGroupMatchResult的match_status值为: "完全匹配", "部分匹配", "低相似度", "未找到"
+        'matched': sum(1 for r in match_results if r['匹配状态'] == '完全匹配'),
+        'partial': sum(1 for r in match_results if r['匹配状态'] in ('部分匹配', '低相似度')),
+        'unmatched': sum(1 for r in match_results if r['匹配状态'] == '未找到'),
         'output_folder': str(output_path),
-        'report_path': str(report_path)
+        'report_path': str(report_path),
+        # 引擎统计
+        'rapid_calls': engine_stats.get('rapid_calls', 0),
+        'deepseek_calls': engine_stats.get('deepseek_calls', 0),
+        'fallback_count': engine_stats.get('fallback_count', 0)
     }
     
     return stats

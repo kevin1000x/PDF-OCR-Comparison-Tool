@@ -57,6 +57,8 @@ class OCREngine:
         """延迟初始化PaddleOCR"""
         if self._ocr is None:
             try:
+                # 先尝试导入paddle核心库检测DLL冲突
+                import paddle
                 from paddleocr import PaddleOCR
                 # PaddleOCR 3.x API - 使用默认server模型（高精度）
                 self._ocr = PaddleOCR(
@@ -65,9 +67,13 @@ class OCREngine:
                     use_textline_orientation=False,  # 禁用文本行方向检测
                 )
                 logger.info("PaddleOCR initialized (PP-OCRv5 server, high accuracy)")
-            except ImportError:
-                logger.error("PaddleOCR not installed. Please run: pip install paddleocr")
+            except ImportError as e:
+                logger.error(f"PaddleOCR not installed: {e}")
                 raise
+            except OSError as e:
+                # DLL冲突（PyTorch和Paddle共存问题）
+                logger.error(f"PaddleOCR DLL conflict (PyTorch incompatible): {e}")
+                raise ImportError(f"Paddle-PyTorch DLL conflict: {e}")
             except Exception as e:
                 logger.error(f"Failed to initialize PaddleOCR: {e}")
                 raise

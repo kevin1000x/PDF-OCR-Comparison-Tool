@@ -8,9 +8,11 @@
 ## ✨ 功能特点
 
 - 🔍 **高精度OCR识别** - 基于DeepSeek-OCR2模型，支持复杂中文文档
+- 🚀 **混合OCR引擎** - RapidOCR快速处理 + DeepSeek精准复核，速度与精度兼得
 - 📄 **可搜索PDF生成** - 将扫描PDF转换为可搜索的PDF（嵌入文本层）
-- 🔗 **智能文档比对** - 自动匹配凭证与参照资料，生成对比报告
-- 🖥️ **图形化界面** - 简单易用的桌面GUI，支持实时进度显示
+- 🔗 **智能文档比对** - 自动匹配凭证与参照资料，基于TF-IDF全文相似度
+- 📊 **凭证分组匹配** - 自动识别凭证首页和附件，按组进行匹配
+- 🖥️ **现代化GUI** - 深色侧边栏+白色卡片的SaaS风格界面
 - ⚡ **GPU加速** - 支持CUDA加速，大幅提升处理速度
 - 💾 **缓存机制** - 避免重复处理，支持断点续传
 
@@ -27,7 +29,7 @@
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/yourusername/PDF-OCR-Comparison-Tool.git
+git clone https://github.com/kevin1000x/PDF-OCR-Comparison-Tool.git
 cd PDF-OCR-Comparison-Tool
 
 # 2. 创建虚拟环境
@@ -46,12 +48,17 @@ pip install -r requirements.txt
 #### 方式一：图形界面（推荐）
 
 ```bash
-python ocr_gui.py
+python ocr_gui_modern.py
 ```
 
 或双击 `启动OCR工具.bat`
 
-![GUI界面](docs/gui_screenshot.png)
+**OCR引擎选择**：
+| 引擎 | 速度 | 精度 | 说明 |
+|------|:----:|:----:|------|
+| hybrid | ⚡中 | ⭐⭐⭐ | RapidOCR+DeepSeek智能切换（推荐）|
+| rapid | ⚡⚡快 | ⭐⭐ | 仅RapidOCR，适合简单文档 |
+| deepseek | 🐢慢 | ⭐⭐⭐⭐ | 仅DeepSeek，最高精度 |
 
 #### 方式二：命令行
 
