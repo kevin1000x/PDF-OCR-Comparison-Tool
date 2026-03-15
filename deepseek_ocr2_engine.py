@@ -65,6 +65,10 @@ class DeepSeekOCR2Engine:
         import torch
         from transformers import AutoModel, AutoTokenizer
         
+        # 清理显存以确保有足够空间
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            
         logger.info("Initializing DeepSeek-OCR2 model...")
         
         model_name = 'deepseek-ai/DeepSeek-OCR-2'
@@ -76,14 +80,35 @@ class DeepSeekOCR2Engine:
                 trust_remote_code=True
             )
             
-            # 加载模型 (bfloat16节省显存)
+            # 检查是否应该使用量化 (默认检查bitsandbytes是否可用)
+            use_quantization = self.config.get('use_quantization', False)
+            load_in_4bit = self.config.get('load_in_4bit', False)
+            load_in_8bit = self.config.get('load_in_8bit', False)
+            
+            model_kwargs = {
+                "trust_remote_code": True,
+                "use_safetensors": True,
+                "torch_dtype": torch.bfloat16,
+                "device_map": "auto",
+                "low_cpu_mem_usage": True,
+            }
+            
+            if use_quantization or load_in_4bit or load_in_8bit:
+                try:
+                    import bitsandbytes
+                    if load_in_4bit:
+                        model_kwargs["load_in_4bit"] = True
+                        logger.info("Enabling 4-bit quantization")
+                    else:
+                        model_kwargs["load_in_8bit"] = True
+                        logger.info("Enabling 8-bit quantization")
+                except ImportError:
+                    logger.warning("bitsandbytes not found, disabling quantization")
+            
+            # 加载模型
             self._model = AutoModel.from_pretrained(
                 model_name,
-                trust_remote_code=True,
-                use_safetensors=True,
-                torch_dtype=torch.bfloat16,
-                device_map="auto",
-                low_cpu_mem_usage=True,
+                **model_kwargs
             )
             
             self._initialized = True
@@ -91,7 +116,31 @@ class DeepSeekOCR2Engine:
             
         except Exception as e:
             logger.error(f"Failed to initialize DeepSeek-OCR2: {e}")
+            # 初始化失败，清理资源
+            self.unload_model()
             raise
+
+    def unload_model(self):
+        """卸载模型，释放显存"""
+        if self._model:
+            logger.info("Unloading DeepSeek-OCR2 model...")
+            del self._model
+            self._model = None
+            
+        if self._tokenizer:
+            del self._tokenizer
+            self._tokenizer = None
+            
+        self._initialized = False
+        
+        # 强制垃圾回收和显存清理
+        import gc
+        import torch
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            
+        logger.info("Model unloaded and VRAM cleared")
     
     def recognize_image(self, image) -> List[OCRResult]:
         """

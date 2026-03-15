@@ -241,6 +241,13 @@ class HybridOCREngine:
             'avg_time_per_call': self.stats['total_time'] / total_calls if total_calls > 0 else 0
         }
     
+    def unload_deepseek(self):
+        """卸载DeepSeek模型以释放显存"""
+        if self._deepseek_engine:
+            self._deepseek_engine.unload_model()
+            self._deepseek_engine = None
+            logger.info("DeepSeek engine unloaded from Hybrid engine")
+
     def print_stats(self):
         """打印统计信息"""
         stats = self.get_stats()

@@ -46,30 +46,34 @@ logger = logging.getLogger(__name__)
 
 # ============ 配色方案 ============
 class Theme:
-    """SaaS风格配色"""
+    """中国传统配色：明快清爽"""
     # 背景色
-    BG_MAIN = "#F3F4F6"          # 主背景 - 浅灰蓝
-    BG_SIDEBAR = "#1E293B"       # 侧边栏 - 深午夜蓝
+    BG_MAIN = "#FDFBF7"          # 主背景 - 米宣纸
+    BG_SIDEBAR = "#F8F9FA"       # 侧边栏 - 霜色 (极淡灰)
     BG_CARD = "#FFFFFF"          # 卡片 - 纯白
     
     # 主色调
-    PRIMARY = "#4F46E5"          # 靛青色
-    PRIMARY_HOVER = "#4338CA"    # 靛青色悬停
-    SUCCESS = "#10B981"          # 翡翠绿
-    SUCCESS_HOVER = "#059669"
-    DANGER = "#EF4444"           # 红色
-    SECONDARY = "#6B7280"        # 次要灰
-    
+    PRIMARY = "#F29C9F"          # 淡绯 (Danfei) - 柔和的粉红
+    PRIMARY_HOVER = "#E08588"    # 淡绯加深
+
+    # 强调色
+    SUCCESS = "#78A355"          # 柳染 (Willow Green)
+    SUCCESS_HOVER = "#5E8A3D"    # 柳染加深
+    DANGER = "#D93A49"           # 赤红 (Crimson)
+    SECONDARY = "#9D9D9D"        # 银鼠 (Silver Gray)
+
     # 文字
-    TEXT_DARK = "#1F2937"        # 深色文字
-    TEXT_LIGHT = "#FFFFFF"       # 浅色文字
-    TEXT_MUTED = "#9CA3AF"       # 次要文字
-    
+    TEXT_DARK = "#333333"        # 漆黑 - 正文
+    TEXT_SIDEBAR = "#4A4A4A"     # 侧边栏深色文字
+    TEXT_MUTED = "#888888"       # 浅灰 - 次要文字
+    TEXT_ON_PRIMARY = "#2C2C2C"  # 按钮上的每字
+    TEXT_ACCENT = "#D93A49"      # 强调文字
+
     # 边框
-    BORDER = "#E5E7EB"
-    
+    BORDER = "#EFEFEF"
+
     # 圆角
-    RADIUS = 8
+    RADIUS = 10
     RADIUS_SM = 6
 
 
@@ -120,7 +124,7 @@ class FolderInputCard(ctk.CTkFrame if USE_CUSTOM_TK else object):
             corner_radius=Theme.RADIUS_SM,
             border_width=1,
             border_color=Theme.BORDER,
-            fg_color="#F9FAFB",
+            fg_color="#FAF9F6",
             placeholder_text="拖放文件夹或点击右侧浏览...",
             placeholder_text_color=Theme.TEXT_MUTED
         )
@@ -133,7 +137,7 @@ class FolderInputCard(ctk.CTkFrame if USE_CUSTOM_TK else object):
             height=40,
             corner_radius=Theme.RADIUS_SM,
             fg_color=Theme.SECONDARY,
-            hover_color="#4B5563",
+            hover_color="#7E7E7E",
             command=self._browse
         )
         self.browse_btn.pack(side="right", padx=(8, 0))
@@ -244,407 +248,306 @@ class ModernOCRApp:
         self.root.after(100, self._check_queue)
     
     def _create_modern_ui(self):
-        """创建现代化界面"""
-        # 主布局
-        self.root.grid_columnconfigure(1, weight=1)
-        self.root.grid_rowconfigure(0, weight=1)
-        
-        # ======== 深色侧边栏 ========
-        self.sidebar = ctk.CTkFrame(
-            self.root, width=220, corner_radius=0,
-            fg_color=Theme.BG_SIDEBAR
+        """创建现代化界面 - 顶部导航 + 双栏布局"""
+        # 主布局Grid
+        self.root.grid_columnconfigure(0, weight=4)  # 左侧操作区 (40%)
+        self.root.grid_columnconfigure(1, weight=6)  # 右侧反馈区 (60%)
+        self.root.grid_rowconfigure(0, weight=0)     # 顶部Header (固定高度)
+        self.root.grid_rowconfigure(1, weight=1)     # 主体内容 (自适应)
+
+        # ======== 顶部 Header ========
+        self.header = ctk.CTkFrame(
+            self.root, height=80, corner_radius=0,
+            fg_color=Theme.BG_SIDEBAR # 使用霜色作为Header背景
         )
-        self.sidebar.grid(row=0, column=0, rowspan=2, sticky="nsew")
-        self.sidebar.grid_propagate(False)
-        self._create_sidebar()
-        
-        # ======== 主内容区 ========
-        self.main_frame = ctk.CTkFrame(self.root, fg_color=Theme.BG_MAIN, corner_radius=0)
-        self.main_frame.grid(row=0, column=1, sticky="nsew")
-        self._create_main_content()
-        
+        self.header.grid(row=0, column=0, columnspan=2, sticky="ew")
+        self._create_header()
+
+        # ======== 左侧操作面板 ========
+        self.left_panel = ctk.CTkFrame(self.root, fg_color=Theme.BG_MAIN, corner_radius=0)
+        self.left_panel.grid(row=1, column=0, sticky="nsew", padx=30, pady=30)
+        self._create_left_panel()
+
+        # ======== 右侧反馈面板 ========
+        self.right_panel = ctk.CTkFrame(self.root, fg_color=Theme.BG_MAIN, corner_radius=0)
+        self.right_panel.grid(row=1, column=1, sticky="nsew", padx=(0, 30), pady=30)
+        self._create_right_panel()
+
         # ======== 状态栏 ========
         self.statusbar = StatusBar(self.root)
-        self.statusbar.grid(row=1, column=1, sticky="ew")
-    
-    def _create_sidebar(self):
-        """创建深色侧边栏"""
-        # Logo区域
-        logo_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        logo_frame.pack(fill="x", padx=20, pady=(30, 10))
-        
-        logo_label = ctk.CTkLabel(
+        self.statusbar.grid(row=2, column=0, columnspan=2, sticky="ew")
+
+    def _create_header(self):
+        """创建顶部导航栏"""
+        # Logo (左侧)
+        logo_frame = ctk.CTkFrame(self.header, fg_color="transparent")
+        logo_frame.pack(side="left", padx=30, pady=15)
+
+        ctk.CTkLabel(
             logo_frame,
             text="📄 PDF OCR Pro",
-            font=ctk.CTkFont(size=22, weight="bold"),
-            text_color=Theme.TEXT_LIGHT
-        )
-        logo_label.pack(anchor="w")
-        
-        version_label = ctk.CTkLabel(
+            font=ctk.CTkFont(size=24, weight="bold"),
+            text_color=Theme.TEXT_DARK
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
             logo_frame,
-            text="v3.0 · 智能识别",
-            font=ctk.CTkFont(size=11),
-            text_color=Theme.TEXT_MUTED
-        )
-        version_label.pack(anchor="w", pady=(2, 0))
-        
-        # 间距
-        ctk.CTkFrame(self.sidebar, height=30, fg_color="transparent").pack()
-        
-        # OCR引擎
-        self._create_sidebar_section("⚙️ OCR引擎")
-        self.engine_var = ctk.StringVar(value="hybrid")
-        self.engine_menu = ctk.CTkOptionMenu(
-            self.sidebar,
-            values=["hybrid", "rapid", "deepseek"],
-            variable=self.engine_var,
-            width=180,
-            height=36,
-            corner_radius=Theme.RADIUS_SM,
-            fg_color="#334155",
-            button_color="#475569",
-            button_hover_color="#64748B",
-            dropdown_fg_color="#1E293B",
-            command=self._on_engine_change
-        )
-        self.engine_menu.pack(padx=20, pady=(0, 20))
-        
-        # DPI设置
-        self._create_sidebar_section("📐 DPI")
-        self.dpi_var = ctk.StringVar(value="150")
-        self.dpi_menu = ctk.CTkOptionMenu(
-            self.sidebar,
-            values=["100", "150", "200", "300"],
-            variable=self.dpi_var,
-            width=180,
-            height=36,
-            corner_radius=Theme.RADIUS_SM,
-            fg_color="#334155",
-            button_color="#475569",
-            button_hover_color="#64748B",
-            dropdown_fg_color="#1E293B"
-        )
-        self.dpi_menu.pack(padx=20, pady=(0, 20))
-        
-        # 置信度阈值
-        self._create_sidebar_section("🎯 置信度阈值")
-        
-        conf_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        conf_frame.pack(fill="x", padx=20, pady=(0, 20))
-        
-        self.conf_slider = ctk.CTkSlider(
-            conf_frame,
-            from_=0.5,
-            to=1.0,
-            number_of_steps=10,
-            width=140,
-            progress_color=Theme.PRIMARY,
-            button_color=Theme.PRIMARY,
-            button_hover_color=Theme.PRIMARY_HOVER
-        )
-        self.conf_slider.set(0.85)
-        self.conf_slider.pack(side="left")
-        
-        self.conf_value_label = ctk.CTkLabel(
-            conf_frame,
-            text="0.85",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=Theme.TEXT_LIGHT,
-            width=40
-        )
-        self.conf_value_label.pack(side="right")
-        self.conf_slider.configure(command=self._on_conf_change)
-        
-        # 底部填充
-        spacer = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        spacer.pack(fill="both", expand=True)
-        
-        # 关于按钮
-        about_btn = ctk.CTkButton(
-            self.sidebar,
-            text="ℹ️  关于",
-            fg_color="transparent",
-            hover_color="#334155",
-            text_color=Theme.TEXT_MUTED,
-            anchor="w",
-            height=40,
-            command=self._show_about
-        )
-        about_btn.pack(fill="x", padx=15, pady=(0, 30))
-    
-    def _create_sidebar_section(self, title):
-        """创建侧边栏分区标题"""
-        label = ctk.CTkLabel(
-            self.sidebar,
-            text=title,
+            text="v3.0 · 智能识别", # 副标题
             font=ctk.CTkFont(size=12),
-            text_color=Theme.TEXT_MUTED,
-            anchor="w"
+            text_color=Theme.TEXT_MUTED
+        ).pack(anchor="w")
+
+        # 设置区域 (右侧)
+        # 使用一个胶囊状容器包裹设置项
+        settings_frame = ctk.CTkFrame(self.header, fg_color="transparent")
+        settings_frame.pack(side="right", padx=30)
+
+        # 1. 引擎
+        self._create_header_setting(settings_frame, "引擎", ["hybrid", "rapid", "deepseek"],
+                                  "hybrid", self._on_engine_change, width=100)
+
+        # 间隔
+        ctk.CTkFrame(settings_frame, width=20, height=1, fg_color="transparent").pack(side="left")
+
+        # 2. DPI
+        self.dpi_var = ctk.StringVar(value="150") # 需要保存引用
+        self._create_header_setting(settings_frame, "DPI", ["100", "150", "200"],
+                                  "150", None, variable=self.dpi_var, width=80)
+
+        # 间隔
+        ctk.CTkFrame(settings_frame, width=20, height=1, fg_color="transparent").pack(side="left")
+
+        # 3. 阈值 (Slider)
+        slider_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        slider_frame.pack(side="left")
+        ctk.CTkLabel(slider_frame, text="阈值", font=ctk.CTkFont(size=11, weight="bold"), text_color=Theme.TEXT_MUTED).pack(anchor="w")
+
+        self.conf_slider = ctk.CTkSlider(
+            slider_frame, from_=0.5, to=1.0, number_of_steps=10, width=100,
+            progress_color=Theme.PRIMARY, button_color=Theme.PRIMARY, button_hover_color=Theme.PRIMARY_HOVER,
+            command=self._on_conf_change
         )
-        label.pack(fill="x", padx=20, pady=(0, 8))
-    
-    def _create_main_content(self):
-        """创建主内容区"""
-        # 顶部标签导航 - 使用SegmentedButton
-        nav_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        nav_frame.pack(fill="x", padx=30, pady=(25, 15))
-        
-        self.tab_var = ctk.StringVar(value="任务")
-        self.tab_buttons = ctk.CTkSegmentedButton(
-            nav_frame,
-            values=["📋 任务", "📜 日志", "📊 统计"],
-            variable=self.tab_var,
+        self.conf_slider.pack(side="left", pady=(5,0))
+        self.conf_slider.set(0.85)
+
+        self.conf_value_label = ctk.CTkLabel(slider_frame, text="0.85", font=ctk.CTkFont(size=12), text_color=Theme.TEXT_DARK, width=35)
+        self.conf_value_label.pack(side="left", padx=(5,0), pady=(2,0))
+
+        # 间隔
+        ctk.CTkFrame(settings_frame, width=20, height=1, fg_color="transparent").pack(side="left")
+
+        # 3. 关于按钮
+        ctk.CTkButton(
+            settings_frame,
+            text="ℹ️",
+            width=40,
+            height=36,
+            corner_radius=Theme.RADIUS_SM,
+            fg_color="transparent",
+            hover_color="#E2E8F0",
+            text_color=Theme.TEXT_SIDEBAR,
+            font=ctk.CTkFont(size=16),
+            command=self._show_about
+        ).pack(side="left")
+
+    def _create_header_setting(self, parent, label_text, values, default, command, variable=None, width=100):
+        """创建Header中的单个设置项"""
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.pack(side="left")
+
+        ctk.CTkLabel(
+            frame, text=label_text,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=Theme.TEXT_MUTED
+        ).pack(anchor="w", padx=2)
+
+        if variable is None:
+            if label_text == "引擎":
+                self.engine_var = ctk.StringVar(value=default)
+                variable = self.engine_var
+            else:
+                variable = ctk.StringVar(value=default)
+
+        menu = ctk.CTkOptionMenu(
+            frame,
+            values=values,
+            variable=variable,
+            width=width,
+            height=32,
+            corner_radius=Theme.RADIUS_SM,
+            fg_color="#FFFFFF",
+            button_color="#F2F4F8",
+            button_hover_color="#E2E8F0",
+            text_color=Theme.TEXT_DARK,
+            dropdown_fg_color="#FFFFFF",
+            dropdown_text_color="#333333",
             font=ctk.CTkFont(size=13),
-            fg_color=Theme.BG_CARD,
-            selected_color=Theme.PRIMARY,
-            selected_hover_color=Theme.PRIMARY_HOVER,
-            unselected_color=Theme.BG_CARD,
-            unselected_hover_color="#E5E7EB",
-            corner_radius=Theme.RADIUS,
-            command=self._on_tab_change
+            command=command
         )
-        self.tab_buttons.pack(side="left")
-        
-        # 内容容器
-        self.content_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.content_frame.pack(fill="both", expand=True, padx=30, pady=(0, 20))
-        
-        # 创建各Tab内容
-        self.tab_frames = {}
-        self._create_task_tab()
-        self._create_log_tab()
-        self._create_stats_tab()
-        
-        # 默认显示任务Tab
-        self._show_tab("📋 任务")
-    
-    def _create_task_tab(self):
-        """任务选项卡"""
-        frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        self.tab_frames["📋 任务"] = frame
-        
-        # 文件夹输入卡片
-        self.voucher_card = FolderInputCard(frame, "凭证文件夹", "📁")
-        self.voucher_card.pack(fill="x", pady=(0, 12))
-        
-        self.reference_card = FolderInputCard(frame, "参照资料文件夹", "📂")
-        self.reference_card.pack(fill="x", pady=(0, 12))
-        
-        self.output_card = FolderInputCard(frame, "输出文件夹", "📤")
-        self.output_card.pack(fill="x", pady=(0, 20))
-        
-        # 进度卡片
-        progress_card = Card(frame)
+        menu.pack()
+        return menu
+
+    def _create_left_panel(self):
+        """左侧：输入与操作"""
+        # 1. 文件输入区 (卡片堆叠)
+        input_group = ctk.CTkFrame(self.left_panel, fg_color="transparent")
+        input_group.pack(fill="x", pady=(0, 20))
+
+        self.voucher_card = FolderInputCard(input_group, "凭证文件夹", "📁")
+        self.voucher_card.pack(fill="x", pady=(0, 15))
+
+        self.reference_card = FolderInputCard(input_group, "参照资料文件夹", "📂")
+        self.reference_card.pack(fill="x", pady=(0, 15))
+
+        self.output_card = FolderInputCard(input_group, "输出文件夹", "📤")
+        self.output_card.pack(fill="x", pady=(0, 15))
+
+        # 2. 进度条 (醒目)
+        progress_card = Card(self.left_panel)
         progress_card.pack(fill="x", pady=(0, 20))
         
-        # 进度标题行
-        progress_header = ctk.CTkFrame(progress_card, fg_color="transparent")
-        progress_header.pack(fill="x", padx=16, pady=(16, 8))
-        
-        self.current_file_label = ctk.CTkLabel(
-            progress_header,
-            text="等待开始...",
-            font=ctk.CTkFont(size=13),
-            text_color=Theme.TEXT_DARK,
-            anchor="w"
-        )
+        # 进度头
+        p_head = ctk.CTkFrame(progress_card, fg_color="transparent")
+        p_head.pack(fill="x", padx=20, pady=(15, 5))
+        self.current_file_label = ctk.CTkLabel(p_head, text="准备就绪", text_color=Theme.TEXT_DARK, font=ctk.CTkFont(size=13))
         self.current_file_label.pack(side="left")
-        
-        self.progress_text = ctk.CTkLabel(
-            progress_header,
-            text="0%",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=Theme.PRIMARY
-        )
-        self.progress_text.pack(side="right")
-        
-        # 进度条
+        self.progress_text = ctk.CTkLabel(p_head, text="0%", text_color=Theme.TEXT_ACCENT, font=ctk.CTkFont(size=14, weight="bold"))
+        self.progress_text.pack(side="right") # 确保这个变量名在update时能找到
+
         self.progress_bar = ctk.CTkProgressBar(
-            progress_card,
-            height=14,
-            corner_radius=7,
-            progress_color=Theme.PRIMARY,
-            fg_color="#E5E7EB"
+            progress_card, height=16, corner_radius=8,
+            progress_color=Theme.PRIMARY, fg_color="#F3F4F6"
         )
-        self.progress_bar.pack(fill="x", padx=16, pady=(0, 16))
+        self.progress_bar.pack(fill="x", padx=20, pady=(0, 20))
         self.progress_bar.set(0)
-        
-        # 按钮区域
-        button_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        button_frame.pack(fill="x")
-        
-        # 开始按钮 - 主要操作
+
+        # 3. 核心操作按钮 (底部)
+        action_frame = ctk.CTkFrame(self.left_panel, fg_color="transparent")
+        action_frame.pack(fill="x", pady=(10, 0))
+
         self.start_btn = ctk.CTkButton(
-            button_frame,
-            text="▶  开始处理",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            height=52,
-            width=220,
+            action_frame,
+            text="▶ 开始处理",
+            height=56,
             corner_radius=Theme.RADIUS,
-            fg_color=Theme.PRIMARY,
-            hover_color=Theme.PRIMARY_HOVER,
+            font=ctk.CTkFont(size=18, weight="bold"),
+            fg_color=Theme.PRIMARY, hover_color=Theme.PRIMARY_HOVER,
+            text_color=Theme.TEXT_ON_PRIMARY,
             command=self._start_processing
         )
-        self.start_btn.pack(side="left")
-        
-        # 停止按钮 - Ghost风格
+        self.start_btn.pack(fill="x", pady=(0, 10))
+
+        # 辅助按钮行
+        sub_actioms = ctk.CTkFrame(action_frame, fg_color="transparent")
+        sub_actioms.pack(fill="x")
+
         self.stop_btn = ctk.CTkButton(
-            button_frame,
-            text="⏹  停止",
-            font=ctk.CTkFont(size=14),
-            height=52,
-            width=100,
-            corner_radius=Theme.RADIUS,
-            fg_color="transparent",
-            border_width=1,
-            border_color=Theme.SECONDARY,
-            text_color=Theme.SECONDARY,
-            hover_color="#F3F4F6",
-            command=self._stop_processing,
-            state="disabled"
+            sub_actioms, text="⏹ 停止",
+            fg_color="#FEE2E2", text_color=Theme.DANGER, hover_color="#FECACA", # 浅红背景
+            width=100, height=40,
+            command=self._stop_processing, state="disabled"
         )
-        self.stop_btn.pack(side="left", padx=(12, 0))
-        
-        # 打开输出 - 成功色，初始弱化
+        self.stop_btn.pack(side="left", expand=True, fill="x", padx=(0, 10))
+
         self.open_btn = ctk.CTkButton(
-            button_frame,
-            text="📂  打开输出",
-            font=ctk.CTkFont(size=14),
-            height=52,
-            width=140,
-            corner_radius=Theme.RADIUS,
-            fg_color=Theme.SECONDARY,
-            hover_color="#4B5563",
+            sub_actioms, text="📂 打开输出",
+            fg_color="transparent", border_width=1, border_color=Theme.BORDER,
+            text_color=Theme.TEXT_SIDEBAR, hover_color="#F3F4F6",
+            width=100, height=40,
             command=self._open_output_folder
         )
-        self.open_btn.pack(side="right")
-    
-    def _create_log_tab(self):
-        """日志选项卡"""
-        frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        self.tab_frames["📜 日志"] = frame
-        
-        # 日志卡片
-        log_card = Card(frame)
-        log_card.pack(fill="both", expand=True)
-        
+        self.open_btn.pack(side="left", expand=True, fill="x")
+
+    def _create_right_panel(self):
+        """右侧：反馈与日志"""
+        # 使用Tabview来组织信息
+        self.tab_view = ctk.CTkTabview(
+            self.right_panel,
+            corner_radius=Theme.RADIUS,
+            fg_color=Theme.BG_CARD,
+            segmented_button_fg_color="#F3F4F6",
+            segmented_button_selected_color=Theme.PRIMARY,
+            segmented_button_selected_hover_color=Theme.PRIMARY_HOVER,
+            segmented_button_unselected_color="#F3F4F6",
+            segmented_button_unselected_hover_color="#E5E7EB",
+            text_color=Theme.TEXT_DARK
+        )
+        self.tab_view.pack(fill="both", expand=True)
+
+        self.tab_view.add("📜 运行日志")
+        self.tab_view.add("📊 统计数据")
+
+        # === 日志 Tab ===
         # 工具栏
-        toolbar = ctk.CTkFrame(log_card, fg_color="transparent")
-        toolbar.pack(fill="x", padx=16, pady=(16, 8))
-        
-        ctk.CTkButton(
-            toolbar, text="🗑️ 清空", width=80, height=32,
-            fg_color=Theme.SECONDARY, hover_color="#4B5563",
-            command=self._clear_log
-        ).pack(side="left", padx=(0, 8))
-        
-        ctk.CTkButton(
-            toolbar, text="💾 导出", width=80, height=32,
-            fg_color=Theme.SECONDARY, hover_color="#4B5563",
-            command=self._export_log
-        ).pack(side="left")
-        
-        # 日志文本框
+        log_tools = ctk.CTkFrame(self.tab_view.tab("📜 运行日志"), fg_color="transparent")
+        log_tools.pack(fill="x", pady=(0, 10))
+
+        ctk.CTkButton(log_tools, text="清空日志", height=28, width=80,
+                     fg_color="transparent", border_width=1, border_color=Theme.BORDER, text_color=Theme.TEXT_MUTED,
+                     command=self._clear_log).pack(side="right")
+
         self.log_textbox = ctk.CTkTextbox(
-            log_card, height=400,
+            self.tab_view.tab("📜 运行日志"),
             corner_radius=Theme.RADIUS_SM,
             fg_color="#F9FAFB",
             text_color=Theme.TEXT_DARK,
-            font=ctk.CTkFont(family="Consolas", size=12)
+            font=ctk.CTkFont(family="Consolas", size=12),
+            activate_scrollbars=True
         )
-        self.log_textbox.pack(fill="both", expand=True, padx=16, pady=(0, 16))
-    
-    def _create_stats_tab(self):
-        """统计选项卡"""
-        frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        self.tab_frames["📊 统计"] = frame
-        
-        # 统计卡片行
-        stats_row = ctk.CTkFrame(frame, fg_color="transparent")
-        stats_row.pack(fill="x", pady=(0, 20))
-        
+        self.log_textbox.pack(fill="both", expand=True)
+
+        # === 统计 Tab ===
+        stats_frame = self.tab_view.tab("📊 统计数据")
+
+        # 统计卡片 Grid
         self.stat_cards = {}
+        grid_frame = ctk.CTkFrame(stats_frame, fg_color="transparent")
+        grid_frame.pack(fill="x", pady=20)
+
         stats_config = [
-            ("total_files", "📁 总文件", "0", Theme.PRIMARY),
+            ("total_files", "📁 总文件", "0", Theme.TEXT_ACCENT),
             ("processed", "✅ 已处理", "0", Theme.SUCCESS),
-            ("pages", "📄 总页数", "0", "#8B5CF6"),
-            ("avg_time", "⏱️ 平均耗时", "-- s", "#F59E0B"),
+            ("pages", "📄 总页数", "0", "#5B5EA6"),
+            ("avg_time", "⏱️ 平均耗时", "--", "#E9BB1D"),
         ]
         
-        for key, title, value, color in stats_config:
-            card = Card(stats_row)
-            card.pack(side="left", fill="x", expand=True, padx=(0, 12) if key != "avg_time" else 0)
-            
-            ctk.CTkLabel(
-                card, text=title,
-                font=ctk.CTkFont(size=12),
-                text_color=Theme.TEXT_MUTED
-            ).pack(pady=(20, 5))
-            
-            value_label = ctk.CTkLabel(
-                card, text=value,
-                font=ctk.CTkFont(size=28, weight="bold"),
-                text_color=color
-            )
-            value_label.pack(pady=(0, 20))
-            
-            self.stat_cards[key] = value_label
-        
-        # 引擎统计卡片
-        engine_card = Card(frame)
-        engine_card.pack(fill="x")
-        
-        ctk.CTkLabel(
-            engine_card,
-            text="🔧 引擎使用统计",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=Theme.TEXT_DARK,
-            anchor="w"
-        ).pack(fill="x", padx=20, pady=(20, 15))
-        
-        # RapidOCR进度
-        self.rapid_label = ctk.CTkLabel(
-            engine_card, text="RapidOCR: 0次 (0%)",
-            font=ctk.CTkFont(size=12),
-            text_color=Theme.TEXT_MUTED, anchor="w"
-        )
-        self.rapid_label.pack(fill="x", padx=20)
-        
-        self.rapid_bar = ctk.CTkProgressBar(
-            engine_card, height=10, corner_radius=5,
-            progress_color="#3B82F6", fg_color="#E5E7EB"
-        )
-        self.rapid_bar.pack(fill="x", padx=20, pady=(5, 15))
+        for i, (key, title, val, col) in enumerate(stats_config):
+            card = ctk.CTkFrame(grid_frame, fg_color="#F3F4F6", corner_radius=Theme.RADIUS)
+            card.grid(row=i//2, column=i%2, padx=10, pady=10, sticky="ew")
+            grid_frame.columnconfigure(i%2, weight=1)
+
+            ctk.CTkLabel(card, text=title, font=ctk.CTkFont(size=12), text_color=Theme.TEXT_MUTED).pack(pady=(15, 5))
+            lbl = ctk.CTkLabel(card, text=val, font=ctk.CTkFont(size=24, weight="bold"), text_color=col)
+            lbl.pack(pady=(0, 15))
+            self.stat_cards[key] = lbl
+
+        # 引擎统计
+        eng_frame = ctk.CTkFrame(stats_frame, fg_color="transparent")
+        eng_frame.pack(fill="x", pady=20, padx=10)
+
+        ctk.CTkLabel(eng_frame, text="引擎调用分布", font=ctk.CTkFont(size=14, weight="bold"), text_color=Theme.TEXT_DARK).pack(anchor="w", pady=(0,10))
+
+        self.rapid_label = ctk.CTkLabel(eng_frame, text="RapidOCR: 0", text_color=Theme.TEXT_MUTED, anchor="w")
+        self.rapid_label.pack(fill="x")
+        self.rapid_bar = ctk.CTkProgressBar(eng_frame, height=8, progress_color="#3B82F6", fg_color="#E5E7EB")
+        self.rapid_bar.pack(fill="x", pady=(5, 15))
         self.rapid_bar.set(0)
         
-        # DeepSeek进度
-        self.deepseek_label = ctk.CTkLabel(
-            engine_card, text="DeepSeek: 0次 (0%)",
-            font=ctk.CTkFont(size=12),
-            text_color=Theme.TEXT_MUTED, anchor="w"
-        )
-        self.deepseek_label.pack(fill="x", padx=20)
-        
-        self.deepseek_bar = ctk.CTkProgressBar(
-            engine_card, height=10, corner_radius=5,
-            progress_color="#8B5CF6", fg_color="#E5E7EB"
-        )
-        self.deepseek_bar.pack(fill="x", padx=20, pady=(5, 20))
+        self.deepseek_label = ctk.CTkLabel(eng_frame, text="DeepSeek: 0", text_color=Theme.TEXT_MUTED, anchor="w")
+        self.deepseek_label.pack(fill="x")
+        self.deepseek_bar = ctk.CTkProgressBar(eng_frame, height=8, progress_color="#8B5CF6", fg_color="#E5E7EB")
+        self.deepseek_bar.pack(fill="x", pady=(5, 0))
         self.deepseek_bar.set(0)
-    
-    def _on_tab_change(self, value):
-        """切换Tab"""
-        self._show_tab(value)
-    
-    def _show_tab(self, tab_name):
-        """显示指定Tab"""
-        for name, frame in self.tab_frames.items():
-            if name == tab_name:
-                frame.pack(fill="both", expand=True)
-            else:
-                frame.pack_forget()
-    
+
+# 保留辅助方法（事件处理等），并适配新布局
+    def _create_sidebar(self): pass # 废弃
+    def _create_sidebar_section(self, t): pass # 废弃
+    def _create_main_content(self): pass # 废弃
+    def _create_task_tab(self): pass # 废弃
+    def _create_log_tab(self): pass # 废弃
+    def _create_stats_tab(self): pass # 废弃
+    def _on_tab_change(self, value): pass # 废弃，现在使用Tabview自动管理
+
     # ============ 事件处理 ============
     
     def _on_engine_change(self, value):
